@@ -1,0 +1,45 @@
+name: AI PR Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit Tests
+        run: npm test -- --coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: E2E Tests
+        run: npx playwright test
+
+      - name: Notify QA Thread
+        if: success()
+        run: |
+          echo "All checks passed. Ready for QA review."
+          # Codex integration would send_message_to_thread here
+
+      - name: Report Failure
+        if: failure()
+        run: |
+          echo "Checks failed. See logs above."
+          # Codex integration would notify Dev thread here

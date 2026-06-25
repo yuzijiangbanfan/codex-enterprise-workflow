@@ -1,0 +1,28 @@
+# Codex 项目配置 — 企业工作流模版
+# 放到项目的 .codex/config.toml
+
+# ===== 必须：信任此项目 =====
+# [projects."/absolute/path/to/your-project"]
+# trust_level = "trusted"
+
+# ===== Hooks 门禁 =====
+# [hooks]
+# enabled = true
+# pre_commit = ".codex/hooks/pre-commit.sh"
+
+# ===== MCP 连接器 =====
+# [mcp_servers.linear]
+# command = "npx"
+# args = ["-y", "@linear/mcp-server"]
+
+# [mcp_servers.github]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# env.GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_xxx"
+
+# [mcp_servers.slack]
+# url = "https://slack.com/mcp"
+
+# ===== 市场 =====
+# [plugins."linear@openai-api-curated"]
+# enabled = true

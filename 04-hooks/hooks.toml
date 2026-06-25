@@ -1,0 +1,27 @@
+# Codex Hooks 配置
+# 放到项目的 .codex/hooks/ 目录，并在 .codex/config.toml 中引用
+
+# 注意：hooks 的精确配置格式请参考最新 Codex 文档
+# 以下为概念性配置，实际语法可能需要调整
+
+[[hooks]]
+name = "pre-commit-quality-gate"
+on = "before_file_edit"
+command = "bash .codex/hooks/pre-commit.sh"
+description = "提交前检查 lint、格式化、测试覆盖率"
+
+[[hooks]]
+name = "pr-merge-safety"
+on = "before_command"
+# 在执行 git merge 到 main 之前触发
+match_command = "^git merge.*main$"
+command = "bash .codex/hooks/scripts/verify-tests-passed.sh"
+description = "合并到 main 前确认所有测试通过"
+
+[[hooks]]
+name = "notify-qa-on-push"
+on = "after_command"
+match_command = "^git push.*ai/dev-.*$"
+action = "send_message_to_thread"
+target_thread = "qa-thread-id"
+message = "新代码已推送，请开始测试。分支: {branch}"
