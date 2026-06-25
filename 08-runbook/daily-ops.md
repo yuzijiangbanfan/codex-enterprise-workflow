@@ -3,121 +3,167 @@
 ## 标准迭代流程
 
 ```
-Sprint 开始
+Orchestrator 分配任务
   │
   ▼
-1. PM 线程：从 Linear/Jira 拉取需求 → 编写用户故事
-2. Architect 线程：审查需求 → 产出 ADR
-3. PM → send_message_to_thread → Dev
+Dev 实现（TDD）
+  ├── git worktree → 写测试 → 写代码 → 通过 → PR
+  └── 汇报 Orchestrator
   │
   ▼
-4. Dev 线程：
-   a. git worktree add ../worktrees/dev-{feature} main
-   b. git checkout -b ai/dev-{feature}
-   c. 写测试 → 写代码 → 通过测试
-   d. git push → 创建 PR
-   e. send_message_to_thread → QA
+Orchestrator → 通知 QA 测试
   │
   ▼
-5. QA 线程：
-   a. git worktree add ../worktrees/qa-{feature} ai/dev-{feature}
-   b. 运行全量测试
-   c. 测试报告 → 通过则 approve PR / 失败则通知 Dev
+QA 测试
+  ├── 通过 → 报告 Orchestrator → Orchestrator 合并 PR
+  └── 失败 → 报告 Orchestrator → Orchestrator 转发 Dev
   │
   ▼
-6. UI 线程：（可在 QA 并行）
-   a. 启动 dev server
-   b. Playwright 多分辨率截图
-   c. UI 审查报告 → 通过或通知 Dev
+UI 审查（可并行 QA）
   │
   ▼
-7. Orchestrator：合并 PR → main → 清理 worktree
-  │
-  ▼
-8. 开始下一个 feature
+Orchestrator → 合并 → 清理 worktree → 下一个任务
 ```
 
 ## 常见操作
 
 ### 开始新功能
 
-在 Orchestrator 线程中说：
-```
-"开始新功能：{feature-name}
- 1. 通知 PM 线程生产需求
- 2. 通知 Dev 线程准备 worktree"
-```
+在对话中对 Orchestrator 说：`"开始新功能：{feature-name}"`
 
-### 检查各线程状态
+### 检查团队状态
 
-```
-"巡检所有角色线程，报告当前状态。"
-```
+对 Orchestrator：`"巡检所有线程，报告当前状态。"`
 
 ### 处理阻塞
 
+`"QA 报告了 P0 缺陷。让 Dev-1 暂停当前工作，优先修复。"`
+
+---
+
+## 故障恢复 ⚠️
+
+### 症状 1：线程无响应（超过 10 分钟无输出）
+
+**诊断**：
 ```
-"QA 报告了一个 P0 缺陷。通知 Dev 线程暂停当前工作，优先修复。"
+read_thread({ threadId: "xxx", turnLimit: 1 })
+→ 查看 status 是否为 "inProgress"
+→ 查看最后一条 reasoning/summary 是否卡在某一步
 ```
 
-### 发布准备
-
+**恢复**：
 ```
-"准备发布 v1.2.0：
- 1. 确认所有 PR 已合并
- 2. QA 运行回归测试
- 3. Architect 审查变更集
- 4. 生成 Changelog"
+1. 如果是 Playwright 安装/浏览器下载卡住：
+   → 这是正常的长任务，等待即可（通常 2-5 分钟）
+
+2. 如果是 git 操作卡住（worktree 冲突）：
+   → 清理 worktree（见下方）
+
+3. 如果线程真的卡死（同一 turn 超过 30 分钟）：
+   → 创建替换线程：
+     create_thread({
+       prompt: "{原角色的指令路径}。当前任务：{卡住时的任务}。请从未完成的部分继续。",
+       target: { type: "projectless", directoryName: "{role}-thread-v2" }
+     })
+   → 归档旧线程：
+     set_thread_archived({ threadId: "xxx", archived: true })
+   → 更新 .codex/threads.txt
 ```
 
-## 故障处理
+### 症状 2：worktree 损坏或冲突
 
-### Dev worktree 冲突
-
+**诊断**：
 ```bash
-# 手动清理
 cd /path/to/project
-git worktree list
-git worktree remove ../worktrees/dev-xxx --force
+git worktree list          # 查看所有 worktree
+git status                 # 主仓库状态
 ```
 
-### 自动化任务卡住
+**恢复**：
+
+| 情况 | 命令 |
+|------|------|
+| worktree 目录已被手动删除 | `git worktree prune` |
+| worktree 有未提交的修改，不再需要 | `git worktree remove ../worktrees/xxx --force` |
+| worktree 被另一个进程占用 | `lsof \| grep worktrees/xxx` → kill 占用进程 → remove |
+| 全部 worktree 混乱 | 关闭所有 Codex 线程 → `git worktree prune` → 重新创建 |
+
+**预防**：Orchestrator 每次合并后立即清理对应 worktree，不积压。
+
+### 症状 3：git 合并冲突
+
+**诊断**：
+```bash
+cd /path/to/project
+git status
+# 看到 "both modified" 或 "CONFLICT"
+```
+
+**恢复**：
+```
+1. 告诉 Orchestrator："main 分支有合并冲突，需要解决"
+2. Orchestrator 读取冲突文件 → 分析冲突内容
+3. Orchestrator 决定保留哪个版本（通常保留最新 Dev 的实现）
+4. git add → git commit → git push
+5. 如果冲突复杂（同一段逻辑两个 Dev 都改了且不兼容）：
+   → Orchestrator 通知两个 Dev 线程，让它们协调
+```
+
+### 症状 4：模板部署失败
+
+**诊断**：
+```
+症状：git clone github.com/yuzijiangbanfan/codex-enterprise-workflow 失败
+原因：SSH key 问题、网络问题、仓库不存在
+```
+
+**恢复**：
+```
+1. SSH key 问题 → 检查 ~/.ssh/id_ed25519_yuzijiangbanfan.pub 是否还在 GitHub
+2. 网络问题 → 等待重试，或克隆到 /tmp 再 cp
+3. 仓库被删 → 从本地缓存恢复：如果 ~/Documents/Codex/2026-06-25/wo/codex-enterprise-template/ 还存在，直接 cp
+```
+
+### 症状 5：Orchestrator 自身挂了
+
+这是最坏的情况——管理者线程崩溃。
+
+**诊断**：Orchestrator 对话无响应，且 `read_thread` 显示异常。
+
+**恢复**：
+```
+1. 读取 .codex/threads.txt 获取所有角色线程 ID
+2. 读取 .codex/task-queue.md 获取当前任务状态
+3. 创建新的 Orchestrator 线程：
+   create_thread({
+     prompt: "你是 Orchestrator。读 .codex/roles/orchestrator.md。
+              这是恢复启动。当前线程状态在 .codex/threads.txt，
+              任务队列在 .codex/task-queue.md。
+              巡检所有线程，从上次中断处继续。",
+     target: { type: "projectless", directoryName: "orchestrator-thread-v2" }
+   })
+4. 新 Orchestrator 自动从 task-queue.md 恢复上下文
+```
+
+---
+
+## 预防性维护
+
+### 每日检查
 
 ```bash
-# 检查自动化状态
-ls ~/.codex/automations/
-# 手动触发或用 automation_update 查看状态
+# 清理孤儿 worktree
+cd /path/to/project && git worktree prune
+
+# 查看积压 worktree
+git worktree list | wc -l
+# 如果超过 8 个，考虑清理
 ```
 
-### 线程失去响应
-
-默认情况下，线程完成当前 turn 后才会处理新消息。如果长时间无响应：
-1. 用 `read_thread` 查看是否在运行长任务
-2. 如果卡住，在 Orchestrator 中 fork 一个新线程继续
-
-## 日志与可观测性
-
-### 状态文件
-
-建议在项目中维护以下状态文件：
-
-```
-.codex/
-├── sprint-status.md      # 当前 Sprint 进度
-├── qa-status.md          # 最近一次 QA 门禁结果
-├── ui-status.md          # UI 审查状态
-└── daily-summary/        # 每日站会摘要
-```
-
-### 检查命令
+### 每周检查
 
 ```bash
-# 查看所有 worktree
-cd /path/to/project && git worktree list
-
-# 查看当前分支
-git branch -a | grep 'ai/'
-
-# 查看最近的自动化任务输出
-cat .codex/qa-status.md
+# 归档超过 7 天没活动的临时线程
+# 检查 .codex/threads.txt 中的线程是否都还活着
 ```
