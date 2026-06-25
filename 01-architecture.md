@@ -3,26 +3,33 @@
 ## 整体数据流
 
 ```
-                    ┌──────────────┐
-                    │  外部系统      │
-                    │ Jira/Linear  │
-                    └──────┬───────┘
-                           │ MCP Connector
-                           ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     Orchestrator（协调线程）                    │
-│  - 接收外部需求 → 拆分为用户故事                               │
-│  - 分配任务给各角色线程                                        │
-│  - 巡检各线程状态                                              │
-│  - 触发合并 / 审批                                             │
-└──┬───────────┬───────────┬───────────┬───────────┬───────────┘
+                         ┌──────────────┐
+                         │  外部系统      │
+                         │ Jira/Linear  │
+                         └──────┬───────┘
+                                │ MCP Connector
+                                ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                   Orchestrator（团队管理者）                         │
+│                                                                   │
+│   "我要做 XX 项目"                                                 │
+│        │                                                          │
+│        ├─ 1. 自动部署模板                                          │
+│        ├─ 2. 启动 Architect → 技术选型                              │
+│        ├─ 3. 评估复杂度 → 决定团队规模                              │
+│        │    简单: 1 Dev · 中等: 2 Dev · 复杂: 3 Dev                │
+│        ├─ 4. 创建角色线程                                          │
+│        ├─ 5. 收到需求 → 分给空闲 Dev                                │
+│        ├─ 6. 巡检进度 → 卡住了？扩线程                              │
+│        └─ 7. 协调合并 → 清理 worktree                              │
+│                                                                   │
+└──┬───────────┬───────────┬───────────┬───────────┬───────────────┘
    │           │           │           │           │
    ▼           ▼           ▼           ▼           ▼
 ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
-│ 架构  │  │  PM  │  │  Dev │  │  QA  │  │  UI  │
-│审查   │  │需求   │  │开发   │  │测试   │  │审查   │
-│      │  │      │  │      │  │      │  │      │
-│worktr│  │worktr│  │worktr│  │worktr│  │worktr│
+│架构师 │  │  PM  │  │Dev-1 │  │Dev-2 │  │  QA  │  ← 数量由 Orchestrator 决定
+│技术   │  │需求   │  │开发   │  │开发   │  │测试   │
+│选型   │  │分析   │  │      │  │      │  │      │
 └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘
    │         │         │         │         │
    └─────────┴────┬────┴─────────┴─────────┘
@@ -39,86 +46,70 @@
            └─────────────┘
 ```
 
+## 角色体系
+
+| 角色 | 职责 | 数量 | 启动时机 |
+|------|------|------|----------|
+| **Orchestrator** | 团队管理、任务分发、自动扩缩 | 1 | 用户说第一句话 |
+| **Architect** | 技术选型、架构审查 | 1 | Orchestrator 启动后 |
+| **PM** | 需求分析、用户故事 | 1 | 技术栈确认后 |
+| **Dev** | TDD 实现 | 1-3（动态） | PM 产出需求后 |
+| **QA** | 自动化测试、缺陷报告 | 1-2（动态） | Dev 完成后 |
+| **UI** | 界面审查 | 1 | 有 UI 变更时 |
+
+## Orchestrator 的决策模型
+
+### 团队规模决策
+
+| 项目特征 | Dev | QA | 典型场景 |
+|----------|-----|-----|----------|
+| 简单（1-2 功能，无复杂交互） | 1 | 1 | 落地页、博客、个人工具 |
+| 中等（3-6 功能，标准 CRUD） | 2 | 1 | 后台管理系统、SaaS MVP |
+| 复杂（7+ 功能，多模块） | 3 | 2 | 电商平台、ERP、多端应用 |
+| 有独立前后端 | 2（分工） | 1 | 前后端分离的 Web 应用 |
+
+### 任务分发规则
+
+```
+1. 优先空闲线程
+2. 其次专长匹配（前端需求 → 前端 Dev）
+3. 最后队列排队（全忙 → 等待 → 全满 2 个任务则扩线程）
+```
+
 ## Git 分支策略
 
 ```
 main ──────────────────────────────────────────────
   │
   ├── worktrees/architect-review/
-  │     └── 只读审查，产出架构建议文档
-  │
   ├── worktrees/pm-sprint-N/
-  │     └── 产出需求文档，不写代码
-  │
-  ├── worktrees/dev-feature-xxx/  (branch: ai/dev-feature-xxx)
-  │     ├── TDD：先写测试再实现
-  │     ├── commit & push
-  │     └── 创建 PR → main
-  │
-  ├── worktrees/qa-feature-xxx/   (branch: ai/qa-feature-xxx)
-  │     ├── 基于 dev 分支切出
-  │     ├── 跑全量测试
-  │     └── approve / reject PR
-  │
-  └── worktrees/ui-feature-xxx/   (branch: ai/ui-feature-xxx)
-        ├── Playwright 截图对比
-        └── 提交 UI 缺陷
+  ├── worktrees/dev-1-feature-xxx/  (branch: ai/dev-1/feature-xxx)
+  ├── worktrees/dev-2-feature-yyy/  (branch: ai/dev-2/feature-yyy)
+  ├── worktrees/qa-feature-xxx/     (branch: ai/qa/feature-xxx)
+  └── worktrees/ui-feature-xxx/
 ```
-
-### 分支命名规范
-
-| 分支 | 命名 | 创建者 |
-|------|------|--------|
-| 功能分支 | `ai/dev-{feature-slug}` | Dev 线程 |
-| 测试分支 | `ai/qa-{feature-slug}` | QA 线程 |
-| UI 审查分支 | `ai/ui-{feature-slug}` | UI 线程 |
-| 热修复 | `ai/hotfix-{issue}` | Dev 线程 |
-
-## 角色职责矩阵
-
-| 角色 | 产出物 | 输入 | 输出到 | 工作区类型 |
-|------|--------|------|--------|-----------|
-| Architect | 架构决策记录 (ADR) | 需求文档 | PM/Dev | 只读审查 |
-| PM | 用户故事 + 验收标准 | 外部需求/架构建议 | Dev | 文档 worktree |
-| Dev | 功能代码 + 单元测试 | PM 需求 | QA | 开发 worktree |
-| QA | 测试报告 + 缺陷 | Dev 代码 | Dev（缺陷）/ Orchestrator（通过） | 测试 worktree |
-| UI | UI 审查报告 + 截图 | Dev 界面 | Dev | 只读审查 |
 
 ## 质量门禁链
 
 ```
-代码提交
-  │
-  ▼
-[pre-commit hook]
-  ├── ESLint / Prettier 检查
-  ├── 单元测试覆盖率 ≥ 80%
-  └── 不通过 → 拒绝提交
-  │
-  ▼
-[PR 创建]
-  │
-  ▼
-[CI Pipeline - .github/workflows/ai-pr-check.yml]
-  ├── 全量单元测试
-  ├── Playwright E2E 测试
-  ├── 构建验证
-  └── QA 角色线程审批
-  │
-  ▼
-[合并到 main]
-  │
-  ▼
-[pre-push hook]
-  ├── 安全扫描（可选）
-  └── Changelog 更新
+pre-commit → lint + 测试覆盖率 ≥ 80%
+     ↓
+PR 创建 → CI 全量测试 + QA 审批
+     ↓
+合并到 main → Architect 架构审查
+     ↓
+pre-push → 安全扫描
 ```
 
-## 线程孤立原则
+## 自动部署流程
 
-每个角色线程通过 git worktree 获得**独立的工作目录**：
-- Architect/PM/UI 线程以只读模式工作，产出文档而非代码
-- Dev 线程在自己的 worktree 中写代码，通过 git 分支隔离
-- QA 线程从 Dev 分支切出，运行测试但不修改源码
+用户说"我要做 XX 项目" → Orchestrator：
 
-这样避免了多个 AI 线程同时写同一个文件导致的冲突。
+```
+1. 确认目录（默认 /Users/.../Documents/Codex_Project/{项目名}）
+2. git clone 模板仓库 → cp 到项目目录
+3. git init → 初始提交
+4. 启动 Architect 线程
+```
+
+模板仓库：`github.com/yuzijiangbanfan/codex-enterprise-workflow`
