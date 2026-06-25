@@ -3,114 +3,68 @@
 ## 前提条件
 
 - Git 仓库（本地或远程）
-- Node.js ≥ 18（如果用 JS 项目）
 - Codex Desktop 已安装并登录
 
-## 第一步：初始化项目
+## 初始化流程（全自动，你只需描述项目）
 
-```bash
-# 在项目根目录执行
-cd your-project
+整个初始化不需要你选技术栈、不需要你写配置——Architect 角色会全权负责。
 
-# 初始化 git（如果没有）
-git init
-git add -A && git commit -m "chore: initial commit"
+### 你唯一需要做的事
 
-# 复制模板
-cp -r /path/to/codex-enterprise-template/templates/* .
-cp -r /path/to/codex-enterprise-template/templates/.codex .
+在 Codex 新对话中说：
+
+```
+"我要做一个 {项目描述}。
+ 目标用户是 {用户画像}，
+ 核心功能是 {1-3 个核心功能}。"
+
+比如：
+"我要做一个面向独立开发者的 SaaS 订阅管理平台。
+ 核心功能：用户注册登录、订阅计划管理、收入统计看板。"
 ```
 
-## 第二步：配置 .codex/config.toml
+### Architect 角色自动完成的事
 
-编辑 `.codex/config.toml`，根据你的项目调整：
+```
+1. 分析项目特征 → 推荐技术栈，给出理由
+   "根据你的项目特征，我推荐：
+   - 前端: React + Tailwind，因为需要复杂交互的仪表盘
+   - 后端: Node.js + Express，因为团队 JS 统一
+   - 数据库: PostgreSQL，因为财务数据需要事务一致性
+   - 部署: Vercel + Railway，MVP 阶段够用且免费额度大"
+   
+2. 等你说"确认" → 自动写入 AGENTS.md
 
-```toml
-# 信任此项目（必须）
-[projects."/absolute/path/to/your-project"]
-trust_level = "trusted"
+3. 初始化目录结构 + git worktree
 
-# 启用 hooks（可选，需要 Codex ≥ 特定版本）
-[hooks]
-enabled = true
-pre_commit = ".codex/hooks/pre-commit.sh"
+4. 通知 PM 线程：技术栈已定，可以开始写需求
 ```
 
-## 第三步：初始化 worktree
+### 技术选型的逻辑
+
+Architect 不是拍脑袋选——它基于以下维度分析：
+
+| 维度 | 分析项 |
+|------|--------|
+| 用户量级 | 100 人 → 单体；100 万 → 微服务 |
+| 数据复杂度 | 简单 → SQLite；复杂关系 → PostgreSQL；文档型 → MongoDB |
+| 实时性 | 无 → REST；需要 → WebSocket |
+| SEO | 不需要 → SPA；需要 → SSR (Next.js/Nuxt) |
+| 团队技能 | 全栈 JS → MERN；Python 为主 → Django |
+
+你不需要懂这些——你只需要描述你想做什么，Architect 帮你做技术决策。
+
+## 手动配置（可选，只在你有特殊需求时）
+
+### MCP 连接器
 
 ```bash
-bash scripts/setup-worktrees.sh .
-```
+# Linear
+codex plugin install linear@openai-api-curated
 
-这会在 `../worktrees/` 下创建 architect、pm、ui 的静态 worktree。
+# GitHub
+codex mcp add github --command npx --args "-y" "@modelcontextprotocol/server-github"
 
-## 第四步：配置 MCP 连接器（可选）
-
-### Linear
-
-```bash
-codex mcp add linear --url https://linear.app/mcp
-# 然后在 Codex 中授权 Linear OAuth
-```
-
-授权后，PM 线程可以直接从 Linear 拉取 Issue。
-
-### GitHub
-
-```bash
-# 在 .codex/config.toml 添加:
-[mcp_servers.github]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-env.GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_xxx"
-```
-
-配置后 Dev 线程可以创建 PR、查看 CI 状态。
-
-### Slack（通知用）
-
-```bash
+# Slack
 codex mcp add slack --url https://slack.com/mcp
 ```
-
-配置后 QA/UI 发现严重缺陷时可以自动发 Slack 通知。
-
-## 第五步：创建角色线程
-
-在 Codex 中，用 `create_thread` 为每个角色创建独立线程：
-
-```javascript
-// Architect 线程
-create_thread({
-  prompt: "你是架构师。读 .codex/roles/architect.md。项目路径: /path/to/project",
-  target: { type: "projectless", directoryName: "architect-thread" }
-})
-
-// PM 线程
-create_thread({
-  prompt: "你是产品经理。读 .codex/roles/pm.md。项目路径: /path/to/project",
-  target: { type: "projectless", directoryName: "pm-thread" }
-})
-
-// Dev 线程
-create_thread({
-  prompt: "你是全栈开发。读 .codex/roles/dev.md。项目路径: /path/to/project",
-  target: { type: "projectless", directoryName: "dev-thread" }
-})
-
-// QA 线程
-create_thread({
-  prompt: "你是测试工程师。读 .codex/roles/qa.md。项目路径: /path/to/project",
-  target: { type: "projectless", directoryName: "qa-thread" }
-})
-
-// UI 线程
-create_thread({
-  prompt: "你是UI设计师。读 .codex/roles/ui.md。项目路径: /path/to/project",
-  target: { type: "projectless", directoryName: "ui-thread" }
-})
-```
-
-## 第六步：运行第一个迭代
-
-参见 [08-runbook/daily-ops.md](08-runbook/daily-ops.md) 中的"标准迭代流程"。
