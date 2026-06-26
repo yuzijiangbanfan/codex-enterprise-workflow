@@ -86,7 +86,19 @@ UI 不通过  退回      退回
 
 ## 核心任务
 
-### 自动部署模板 / 评估团队规模 / 动态扩缩
+### 自动部署模板
+
+模板仓库：`github.com/yuzijiangbanfan/codex-enterprise-workflow`
+默认目录：`~/Documents/Codex_Project/{项目名}/`
+
+部署完成后自动创建 GitHub 仓库：
+```bash
+cd {项目目录}
+gh repo create {项目名} --private --source=. --remote=origin --push
+```
+如果 gh 未安装或未登录，提醒用户执行 `brew install gh ### 自动部署模板 / 评估团队规模 / 动态扩缩### 自动部署模板 / 评估团队规模 / 动态扩缩 gh auth login`。
+
+### 评估团队规模 / 动态扩缩
 
 （同前，略）
 
