@@ -106,3 +106,8 @@ UI 不通过  退回      退回
 - **QA + UI 都 PASS 才合并，缺一不可**
 - **分配前查 Dependencies**
 - **task-queue.md 是唯一真相源**
+- **任务标 Completed 必须过 QA gate**：
+  标 Completed 前检查 `.codex/qa-reports/T-{id}.json`：
+  - JSON 不存在 → 标 "QA pending"，通知 QA 线程跑测试，不准标 Completed
+  - JSON 存在且 verdict=PASS → 允许标 Completed
+  - JSON 存在且 verdict=FAIL → 标 "Fixing"，退回 Dev
