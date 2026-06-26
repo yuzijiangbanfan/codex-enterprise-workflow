@@ -17,29 +17,31 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install
         run: npm ci
 
       - name: Lint
         run: npm run lint
 
-      - name: Unit Tests
+      - name: Unit + Coverage
         run: npm test -- --coverage
 
       - name: Build
         run: npm run build
 
-      - name: E2E Tests
+      - name: E2E
         run: npx playwright test
 
-      - name: Notify QA Thread
-        if: success()
-        run: |
-          echo "All checks passed. Ready for QA review."
-          # Codex integration would send_message_to_thread here
+      - name: Bundle Size Check
+        run: npx size-limit || true
 
-      - name: Report Failure
-        if: failure()
-        run: |
-          echo "Checks failed. See logs above."
-          # Codex integration would notify Dev thread here
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          config-path: .gitleaks.toml

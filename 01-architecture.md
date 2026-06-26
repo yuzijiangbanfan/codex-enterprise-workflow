@@ -5,111 +5,66 @@
 ```
                          ┌──────────────┐
                          │  外部系统      │
-                         │ Jira/Linear  │
                          └──────┬───────┘
                                 │ MCP Connector
                                 ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│                   Orchestrator（团队管理者）                         │
+│                   Orchestrator（唯一消息中枢）                       │
 │                                                                   │
-│   "我要做 XX 项目"                                                 │
-│        │                                                          │
-│        ├─ 1. 自动部署模板                                          │
-│        ├─ 2. 启动 Architect → 技术选型                              │
-│        ├─ 3. 评估复杂度 → 决定团队规模                              │
-│        │    简单: 1 Dev · 中等: 2 Dev · 复杂: 3 Dev                │
-│        ├─ 4. 创建角色线程                                          │
-│        ├─ 5. 收到需求 → 分给空闲 Dev                                │
-│        ├─ 6. 巡检进度 → 卡住了？扩线程                              │
-│        └─ 7. 协调合并 → 清理 worktree                              │
+│  自动部署 → 启动 Architect → 创建团队 → 任务分发（检查依赖）          │
+│  → Dev 完成 → 通知 QA → QA JSON 报告 → 自动决策合入/退回             │
 │                                                                   │
 └──┬───────────┬───────────┬───────────┬───────────┬───────────────┘
    │           │           │           │           │
    ▼           ▼           ▼           ▼           ▼
 ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
-│架构师 │  │  PM  │  │Dev-1 │  │Dev-2 │  │  QA  │  ← 数量由 Orchestrator 决定
+│架构师 │  │  PM  │  │Dev-1 │  │Dev-2 │  │  QA  │
 │技术   │  │需求   │  │开发   │  │开发   │  │测试   │
-│选型   │  │分析   │  │      │  │      │  │      │
-└──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘  └──┬───┘
-   │         │         │         │         │
-   └─────────┴────┬────┴─────────┴─────────┘
-                  │ git branch / PR
-                  ▼
-           ┌─────────────┐
-           │  main 分支   │
-           │ （受保护）    │
-           └──────┬──────┘
-                  │ hooks 门禁
-                  ▼
-           ┌─────────────┐
-           │  生产部署    │
-           └─────────────┘
-```
-
-## 角色体系
-
-| 角色 | 职责 | 数量 | 启动时机 |
-|------|------|------|----------|
-| **Orchestrator** | 团队管理、任务分发、自动扩缩 | 1 | 用户说第一句话 |
-| **Architect** | 技术选型、架构审查 | 1 | Orchestrator 启动后 |
-| **PM** | 需求分析、用户故事 | 1 | 技术栈确认后 |
-| **Dev** | TDD 实现 | 1-3（动态） | PM 产出需求后 |
-| **QA** | 自动化测试、缺陷报告 | 1-2（动态） | Dev 完成后 |
-| **UI** | 界面审查 | 1 | 有 UI 变更时 |
-
-## Orchestrator 的决策模型
-
-### 团队规模决策
-
-| 项目特征 | Dev | QA | 典型场景 |
-|----------|-----|-----|----------|
-| 简单（1-2 功能，无复杂交互） | 1 | 1 | 落地页、博客、个人工具 |
-| 中等（3-6 功能，标准 CRUD） | 2 | 1 | 后台管理系统、SaaS MVP |
-| 复杂（7+ 功能，多模块） | 3 | 2 | 电商平台、ERP、多端应用 |
-| 有独立前后端 | 2（分工） | 1 | 前后端分离的 Web 应用 |
-
-### 任务分发规则
-
-```
-1. 优先空闲线程
-2. 其次专长匹配（前端需求 → 前端 Dev）
-3. 最后队列排队（全忙 → 等待 → 全满 2 个任务则扩线程）
-```
-
-## Git 分支策略
-
-```
-main ──────────────────────────────────────────────
-  │
-  ├── worktrees/architect-review/
-  ├── worktrees/pm-sprint-N/
-  ├── worktrees/dev-1-feature-xxx/  (branch: ai/dev-1/feature-xxx)
-  ├── worktrees/dev-2-feature-yyy/  (branch: ai/dev-2/feature-yyy)
-  ├── worktrees/qa-feature-xxx/     (branch: ai/qa/feature-xxx)
-  └── worktrees/ui-feature-xxx/
+│选型   │  │分析   │  │      │  │      │  │flaky  │
+└──────┘  └──────┘  └──────┘  └──────┘  └──┬───┘
+                                           │ JSON 报告
+                                           ▼
+                                    .codex/qa-reports/
+                                           │
+                                           ▼
+                                 Orchestrator 自动决策
+                                  ├── PASS → 合入 main
+                                  ├── PASS_WITH_FLAKY → 合入 + 记录 flaky
+                                  └── FAIL → 退回 Dev
 ```
 
 ## 质量门禁链
 
 ```
-pre-commit → lint + 测试覆盖率 ≥ 80%
+pre-commit → lint + 测试覆盖率 ≥ 80% + 密钥扫描
      ↓
-PR 创建 → CI 全量测试 + QA 审批
+PR 创建 → GitHub Actions CI 全部通过
      ↓
-合并到 main → Architect 架构审查
+QA 测试 → JSON 报告（flaky 自动重试 1 次）
      ↓
-pre-push → 安全扫描
+Orchestrator 自动决策
+  ├── PASS → 自动合入
+  ├── PASS_WITH_FLAKY → 合入 + 记录 flaky
+  └── FAIL → 阻塞 + 退回 Dev
+     ↓
+main 分支保护：禁止直接 push，必须 PR + CI 绿
 ```
 
-## 自动部署流程
-
-用户说"我要做 XX 项目" → Orchestrator：
+## 任务分发机制
 
 ```
-1. 确认目录（默认 /Users/.../Documents/Codex_Project/{项目名}）
-2. git clone 模板仓库 → cp 到项目目录
-3. git init → 初始提交
-4. 启动 Architect 线程
+分配前必须检查 task-queue.md Dependencies 列：
+  T-003 依赖 T-001 → T-001 未完成 → T-003 不分配
+  T-004 无依赖 → 直接分配
 ```
 
-模板仓库：`github.com/yuzijiangbanfan/codex-enterprise-workflow`
+## 分支策略
+
+```
+main（受保护，禁止直接 push）
+  │
+  ├── worktrees/architect-review/
+  ├── worktrees/pm-sprint-N/
+  ├── worktrees/dev-1-feature-xxx/  (branch: ai/dev-1/feature-xxx)
+  └── worktrees/qa-feature-xxx/     (branch: ai/qa/feature-xxx)
+```
