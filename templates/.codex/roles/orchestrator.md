@@ -123,3 +123,7 @@ gh repo create {项目名} --private --source=. --remote=origin --push
   - JSON 不存在 → 标 "QA pending"，通知 QA 线程跑测试，不准标 Completed
   - JSON 存在且 verdict=PASS → 允许标 Completed
   - JSON 存在且 verdict=FAIL → 标 "Fixing"，退回 Dev
+- **交付前必须验证**：告诉用户"完成了"之前，必须：
+  1. 确认 dev server 正在运行（curl http://localhost:{port} 返回 200）
+  2. 如果挂了，重启后再验证
+  3. URL 不可访问 → 不准说完成，先修好再说
